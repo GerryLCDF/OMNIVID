@@ -322,20 +322,28 @@ def run_download(link, mode):
     is_audio = mode == "1"
     outtmpl = os.path.join(WORKDIR, "%(playlist_index)s - %(title)s.%(ext)s")
 
-    cookie_file = make_cookie_file()
+    def build_args(cookies=None):
+        args = ["yt-dlp", "-o", outtmpl, "--no-warnings", "--newline", link]
+        if cookies:
+            args += ["--cookies", cookies]
+        if is_audio:
+            args += ["-x", "--audio-format", "mp3", "--audio-quality", "320"]
+        else:
+            args += ["-f", "bv*+ba/b", "--merge-output-format", "mp4"]
+        return args
+
     tag = "[bold green]Audio[/]" if is_audio else "[bold green]Video[/]"
     with console.status(f"[bold bright_white]Descargando[/] {tag}...", spinner="dots12",
                         spinner_style="bright_cyan"):
+        r = None
+        cookie_file = None
         try:
-            args = ["yt-dlp", "-o", outtmpl, "--no-warnings", "--newline", link]
-            if cookie_file:
-                args += ["--cookies", cookie_file]
-            if is_audio:
-                args += ["-x", "--audio-format", "mp3", "--audio-quality", "320"]
-            else:
-                args += ["-f", "bv*+ba/b", "--merge-output-format", "mp4"]
+            r = subprocess.run(build_args(), capture_output=True, text=True, timeout=600)
 
-            r = subprocess.run(args, capture_output=True, text=True, timeout=600)
+            if r.returncode != 0:
+                cookie_file = make_cookie_file()
+                if cookie_file:
+                    r = subprocess.run(build_args(cookie_file), capture_output=True, text=True, timeout=600)
 
             if r.returncode != 0:
                 err = r.stderr.strip().split("\n")[-1] if r.stderr.strip() else "Error desconocido"
