@@ -2,10 +2,9 @@
 
 A terminal-based YouTube video and music downloader with playlist support, 320kbps MP3 audio, best-quality video, and automatic cookies.
 
-![Main menu]
-<img width="860" height="628" alt="image" src="https://github.com/user-attachments/assets/378a4242-4039-4fd2-aee4-d7ba613f0886" />
-
-
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/378a4242-4039-4fd2-aee4-d7ba613f0886" width="640" alt="Main menu" />
+</p>
 
 ## Features
 
@@ -15,27 +14,38 @@ A terminal-based YouTube video and music downloader with playlist support, 320kb
 - **Automatic cookies** — uses Brave cookies only as a fallback (for age-restricted videos)
 - **Session history** of downloads
 - TUI interface powered by `rich`
+- Live download progress bar
 
 ## Screenshots
 
-![Video mode] <img width="856" height="636" alt="image" src="https://github.com/user-attachments/assets/7b4757e3-a017-4da1-8da3-85c37ad22add" />
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/7b4757e3-a017-4da1-8da3-85c37ad22add" width="560" alt="Video mode" />
+  <br /><em>Video mode</em>
+</p>
 
-![Playlist selection]<img width="856" height="636" alt="image" src="https://github.com/user-attachments/assets/164505f9-6cd7-4423-9f93-2ba145f88f78" />
-<img width="856" height="636" alt="image" src="https://github.com/user-attachments/assets/3fb9b500-9171-428e-afd7-d4595f32ee3c" />
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/164505f9-6cd7-4423-9f93-2ba145f88f78" width="560" alt="Playlist selection" />
+  <br /><em>Playlist selection</em>
+</p>
 
-![Downloading] <img width="856" height="636" alt="image" src="https://github.com/user-attachments/assets/746964b0-f187-484f-ae1f-845b0d00c4cf" />
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/3fb9b500-9171-428e-afd7-d4595f32ee3c" width="560" alt="Downloading" />
+  <br /><em>Downloading with live progress</em>
+</p>
 
-![Audio mode](docs/screenshots/audio-mode.png)
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/746964b0-f187-484f-ae1f-845b0d00c4cf" width="560" alt="Audio mode" />
+  <br /><em>Audio mode</em>
+</p>
 
 ## Demo
 
-[Watch the demo video](
-
-https://youtu.be/MCsZuoAQvmE
-
-
-
-)
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=MCsZuoAQvmE">
+    <img src="https://img.youtube.com/vi/MCsZuoAQvmE/maxresdefault.jpg" width="560" alt="Watch the demo video" />
+  </a>
+  <br /><em>Click to watch the demo</em>
+</p>
 
 ## Requirements
 
@@ -75,8 +85,15 @@ omnivid
 2. Paste a YouTube link (video or playlist)
 3. Done — it downloads to your current folder
 
-puedes donar aqui para poder seguir adelante con estos protyectos 
-https://ko-fi.com/gerardom86682
+## Support
+
+If you like this project, you can support my work with a donation:
+
+<p align="center">
+  <a href="https://ko-fi.com/gerardom86682">
+    <img src="https://storage.ko-fi.com/cdn/kofi6.png" width="217" alt="Donate on Ko-fi" />
+  </a>
+</p>
 
 ## License
 
