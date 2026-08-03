@@ -31,7 +31,7 @@ A terminal-based YouTube video and music downloader with playlist support, 320kb
 
 [Watch the demo video](
 
-
+https://youtu.be/MCsZuoAQvmE
 
 
 
@@ -74,6 +74,9 @@ omnivid
 1. Choose a mode: Audio or Video
 2. Paste a YouTube link (video or playlist)
 3. Done — it downloads to your current folder
+
+puedes donar aqui para poder seguir adelante con estos protyectos 
+https://ko-fi.com/gerardom86682
 
 ## License
 
