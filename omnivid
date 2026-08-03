@@ -1,0 +1,720 @@
+#!/usr/bin/env python3
+"""OMNIVID - Descargador de YouTube con interfaz TUI."""
+
+import os
+import sys
+import subprocess
+import signal
+import re
+import shutil
+import sqlite3
+import tempfile
+from datetime import datetime
+
+os.environ["PATH"] = os.path.expanduser("~/.deno/bin") + ":" + os.environ.get("PATH", "")
+
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+from rich.columns import Columns
+from rich.align import Align
+from rich import box
+
+BANNER = r"""
+ ██████╗ ███╗   ███╗███╗   ██╗██╗██╗   ██╗██╗██████╗
+██╔═══██╗████╗ ████║████╗  ██║██║██║   ██║██║██╔══██╗
+██║   ██║██╔████╔██║██╔██╗ ██║██║██║   ██║██║██║  ██║
+██║   ██║██║╚██╔╝██║██║╚██╗██║██║██║   ██║██║██║  ██║
+╚██████╔╝██║ ╚═╝ ██║██║ ╚████║██║╚██╗ ██╔╝██║██████╔╝
+ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═══╝╚═╝ ╚████╔╝ ╚═╝╚═════╝"""
+
+VERSION = "1.1"
+WORKDIR = os.getcwd()
+
+console = Console()
+
+def clear():
+    sys.stdout.write("\033[2J\033[H\033[3J")
+    sys.stdout.flush()
+
+def gradient_text(text, colors):
+    result = Text()
+    for i, ch in enumerate(text):
+        result.append(ch, style=colors[i % len(colors)])
+    return result
+
+def render_banner():
+    colors = ["bold cyan", "bold blue", "bold magenta", "bold cyan", "bold blue"]
+    banner = gradient_text(BANNER, colors)
+    ver = Text()
+    ver.append(f"  v{VERSION}", style="dim white")
+    ver.append("  ", style="default")
+    ver.append("Descargador de YouTube", style="italic bright_white")
+    ver.append("\n")
+    ver.append("  by:GerardoLCDF", style="bold bright_magenta")
+    return Align.center(Columns([banner, ver], padding=(0, 1), expand=False))
+
+def render_header():
+    header = Table(show_header=False, box=None, padding=(0, 1), expand=True)
+    header.add_column("key", style="bold bright_white", ratio=1)
+    header.add_column("val", style="dim white", ratio=4)
+    cwd = os.getcwd()
+    if len(cwd) > 50:
+        cwd = "..." + cwd[-47:]
+    header.add_row("Dir", cwd)
+    header.add_row("App", "OMNIVID v" + VERSION)
+    header.add_row("Tool", "yt-dlp " + get_ytdlp_version())
+    return header
+
+def get_ytdlp_version():
+    try:
+        r = subprocess.run(["yt-dlp", "--version"], capture_output=True, text=True, timeout=5)
+        return r.stdout.strip() if r.returncode == 0 else "?"
+    except:
+        return "?"
+
+def render_menu():
+    t = Table(box=box.ROUNDED, border_style="bright_cyan", title="[bold bright_white]Opciones[/]",
+              title_style="bold bright_cyan", padding=(0, 2), expand=True, show_lines=False)
+    t.add_column("Idx", style="bold bright_yellow", justify="right", width=4)
+    t.add_column("Modo", style="bold bright_white", min_width=18)
+    t.add_column("Descripcion", style="dim white")
+    t.add_row("[bold cyan]1[/]", "[bold bright_white]Audio[/]", "MP3 320kbps  [dim]- extraer musica[/]")
+    t.add_row("[bold cyan]2[/]", "[bold bright_white]Video[/]", "Mejor calidad  [dim]- descargar video[/]")
+    t.add_row("[bold cyan]3[/]", "[bold bright_white]Historial[/]", "Ver descargas de esta sesion")
+    t.add_row("[bold cyan]4[/]", "[bold bright_white]Ayuda[/]", "Informacion de uso")
+    t.add_row("[bold cyan]5[/]", "[bold bright_white]Salir[/]", "Cerrar OMNIVID")
+    return t
+
+def render_url_box():
+    return Panel(
+        Align.center(Text("Pega el link de YouTube (video o playlist) y presiona ENTER", style="italic bright_white")),
+        title="[bold bright_yellow]Link[/]",
+        border_style="bright_yellow",
+        padding=(0, 2),
+    )
+
+def render_help():
+    t = Table(box=box.ROUNDED, border_style="bright_cyan", title="[bold bright_white]Ayuda[/]",
+              title_style="bold bright_cyan", padding=(0, 2), expand=True, show_lines=False)
+    t.add_column("Comando", style="bold bright_yellow", min_width=20)
+    t.add_column("Accion", style="white")
+    t.add_row("[bold cyan]1[/] o [bold cyan]audio[/]", "Descargar solo audio (MP3)")
+    t.add_row("[bold cyan]2[/] o [bold cyan]video[/]", "Descargar video (mejor calidad)")
+    t.add_row("[bold cyan]3[/] o [bold cyan]history[/]", "Ver historial de descargas")
+    t.add_row("[bold cyan]4[/] o [bold cyan]help[/]", "Mostrar esta ayuda")
+    t.add_row("[bold cyan]5[/] o [bold cyan]exit[/]", "Salir de OMNIVID")
+    t.add_row("[bold cyan]q[/]", "Salir de OMNIVID")
+    t.add_row("[bold cyan]Ctrl+C[/]", "Cancelar / Salir")
+    t.add_row("", "")
+    t.add_row("[bold bright_white]Playlist[/]", "Pega un link de playlist y selecciona los videos")
+    t.add_row("[bold bright_white]Select[/]", "[dim]1,3,5-8  o  all  o  none[/]")
+    return t
+
+def render_history(history):
+    if not history:
+        return Panel(
+            Align.center(Text("No hay descargas en esta sesion", style="italic dim white")),
+            title="[bold bright_yellow]Historial[/]", border_style="bright_yellow", padding=(1, 2),
+        )
+    t = Table(box=box.ROUNDED, border_style="bright_green", title="[bold bright_white]Historial[/]",
+              title_style="bold bright_green", padding=(0, 1), expand=True, show_lines=True)
+    t.add_column("#", style="bold bright_yellow", justify="right", width=4)
+    t.add_column("Tipo", style="bold bright_cyan", width=8)
+    t.add_column("Archivo", style="white", ratio=4)
+    t.add_column("Hora", style="dim white", width=10)
+    for i, d in enumerate(history, 1):
+        fname = d["file"]
+        if len(fname) > 45:
+            fname = fname[:42] + "..."
+        t.add_row(str(i), d["mode"].upper(), fname, d["time"])
+    return t
+
+def is_playlist(url):
+    return bool(re.search(r'[?&]list=|playlist', url, re.IGNORECASE))
+
+def clean_url(url):
+    url = url.strip()
+    url = re.sub(r'^[`"\']|[`"\']$', '', url)
+    url = re.sub(r'\s+.*$', '', url)
+    return url
+
+def fetch_playlist(url):
+    try:
+        r = subprocess.run(
+            ["yt-dlp", "--flat-playlist", "-J", "--no-warnings", "--ignore-errors", url],
+            capture_output=True, text=True, timeout=60
+        )
+        if r.returncode != 0 and not r.stdout.strip():
+            err = r.stderr.strip().split("\n")[-1] if r.stderr.strip() else "Error desconocido"
+            console.print(f"\n  [bold red]yt-dlp error:[/] {err}")
+            return None
+        raw = r.stdout.strip()
+        if not raw:
+            console.print("\n  [bold red]X[/] [red]yt-dlp no devolvio datos[/]")
+            return None
+        data = __import__("json").loads(raw)
+        entries = data.get("entries", [])
+        if not entries:
+            console.print("\n  [bold red]X[/] [red]La playlist esta vacia o no se pudo leer[/]")
+            return None
+        videos = []
+        unavailable = 0
+        for i, e in enumerate(entries, 1):
+            vid_id = e.get("id", "")
+            title = e.get("title", "Sin titulo")
+            available = True
+            if not vid_id or vid_id == "NA":
+                available = False
+            elif title in ("Private video", "Deleted video", "[Deleted video]", "[Private video]"):
+                available = False
+            if not available:
+                unavailable += 1
+            videos.append({
+                "index": i,
+                "id": vid_id,
+                "title": title,
+                "url": f"https://www.youtube.com/watch?v={vid_id}" if vid_id and vid_id != "NA" else "",
+                "duration": format_duration(e.get("duration")),
+                "available": available,
+            })
+        return {
+            "title": data.get("title", "Playlist desconocida"),
+            "uploader": data.get("uploader", data.get("channel", "Desconocido")),
+            "count": len(videos),
+            "available_count": len(videos) - unavailable,
+            "unavailable_count": unavailable,
+            "videos": videos,
+        }
+    except subprocess.TimeoutExpired:
+        console.print("\n  [bold red]X[/] [red]Timeout al obtener playlist (60s)[/]")
+        return None
+    except __import__("json").JSONDecodeError as e:
+        console.print(f"\n  [bold red]X[/] [red]Error al leer JSON: {e}[/]")
+        return None
+    except Exception as e:
+        console.print(f"\n  [bold red]X[/] [red]Error inesperado: {type(e).__name__}: {e}[/]")
+        return None
+
+def format_duration(secs):
+    if not secs:
+        return "??:??"
+    secs = int(secs)
+    h = secs // 3600
+    m = (secs % 3600) // 60
+    s = secs % 60
+    if h > 0:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m:02d}:{s:02d}"
+
+def render_playlist(playlist):
+    avail = playlist.get("available_count", playlist["count"])
+    unavail = playlist.get("unavailable_count", 0)
+    subtitle = f"{avail} disponibles"
+    if unavail > 0:
+        subtitle += f"  [bold red]({unavail} no disponible(s))[/]"
+    t = Table(box=box.ROUNDED, border_style="bright_magenta",
+              title=f"[bold bright_white]{playlist['title']}[/]  [dim]({playlist['count']} videos - {playlist['uploader']})[/]",
+              title_style="bold bright_magenta", padding=(0, 1), expand=True, show_lines=True)
+    t.add_column(" ", style="bold bright_yellow", justify="right", width=4)
+    t.add_column("Titulo", ratio=5)
+    t.add_column("Dur", style="dim bright_cyan", justify="right", width=8)
+    for v in playlist["videos"]:
+        title = v["title"]
+        if len(title) > 60:
+            title = title[:57] + "..."
+        if v["available"]:
+            t.add_row(str(v["index"]), f"[white]{title}[/]", v["duration"])
+        else:
+            t.add_row(str(v["index"]), f"[dim red]{title}[/]  [bold red]X[/]", "[dim red]N/A[/]")
+    return t
+
+def parse_selection(text, max_val):
+    text = text.strip().lower()
+    if text in ("all", "todas", "todo", "a", "*"):
+        return list(range(1, max_val + 1))
+    if text in ("none", "nada", "n", "ninguna", "0"):
+        return []
+    selected = set()
+    for part in text.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            try:
+                start, end = part.split("-", 1)
+                start = int(start.strip())
+                end = int(end.strip())
+                for i in range(start, min(end, max_val) + 1):
+                    if 1 <= i <= max_val:
+                        selected.add(i)
+            except ValueError:
+                continue
+        else:
+            try:
+                num = int(part)
+                if 1 <= num <= max_val:
+                    selected.add(num)
+            except ValueError:
+                continue
+    return sorted(selected)
+
+def render_selection_prompt(count, unavail=0):
+    extra = f"  [dim]({unavail} no disponible(s) se omitiran automaticamente)[/]" if unavail > 0 else ""
+    return Panel(
+        Align.center(Text(
+            f"Selecciona los videos (1-{count}){extra}\n"
+            f"[dim]Ejemplo: 1,3,5-8  |  all=todas  |  none=ninguna[/]",
+            style="italic bright_white")),
+        title="[bold bright_green]Seleccion[/]",
+        border_style="bright_green",
+        padding=(0, 2),
+    )
+
+def render_format_prompt():
+    return Panel(
+        Align.center(Text(
+            "Formato para todos los seleccionados\n"
+            "[dim]Puedes cambiar individualmente despues[/]",
+            style="italic bright_white")),
+        title="[bold bright_cyan]Formato[/]",
+        border_style="bright_cyan",
+        padding=(0, 2),
+    )
+
+BRAVE_COOKIE_DB = os.path.expanduser("~/.config/BraveSoftware/Brave-Browser/Default/Cookies")
+
+def get_browser():
+    if os.path.exists(BRAVE_COOKIE_DB):
+        return "brave"
+    browsers = ["chrome", "chromium", "firefox", "opera", "vivaldi"]
+    for b in browsers:
+        try:
+            r = subprocess.run(["which", b], capture_output=True, timeout=5)
+            if r.returncode == 0:
+                return b
+        except:
+            pass
+    return "brave"
+
+def make_cookie_file():
+    try:
+        import browser_cookie3
+        cj = browser_cookie3.brave(domain_name=".youtube.com")
+        tmp = tempfile.NamedTemporaryFile(suffix=".txt", delete=False, prefix="omnivid-cookies-")
+        with open(tmp.name, "w") as f:
+            f.write("# Netscape HTTP Cookie File\n\n")
+            for c in cj:
+                domain = c.domain
+                flag = "TRUE" if domain.startswith(".") else "FALSE"
+                secure = "TRUE" if c.secure else "FALSE"
+                exp = int(c.expires) if c.expires else 0
+                f.write(f"{domain}\t{flag}\t{c.path}\t{secure}\t{exp}\t{c.name}\t{c.value}\n")
+        if os.path.getsize(tmp.name) < 50:
+            os.unlink(tmp.name)
+            return None
+        return tmp.name
+    except Exception as e:
+        return None
+
+def run_download(link, mode):
+    is_audio = mode == "1"
+    outtmpl = os.path.join(WORKDIR, "%(playlist_index)s - %(title)s.%(ext)s")
+
+    cookie_file = make_cookie_file()
+    tag = "[bold green]Audio[/]" if is_audio else "[bold green]Video[/]"
+    with console.status(f"[bold bright_white]Descargando[/] {tag}...", spinner="dots12",
+                        spinner_style="bright_cyan"):
+        try:
+            args = ["yt-dlp", "-o", outtmpl, "--no-warnings", "--newline", link]
+            if cookie_file:
+                args += ["--cookies", cookie_file]
+            if is_audio:
+                args += ["-x", "--audio-format", "mp3", "--audio-quality", "320"]
+            else:
+                args += ["-f", "bv*+ba/b", "--merge-output-format", "mp4"]
+
+            r = subprocess.run(args, capture_output=True, text=True, timeout=600)
+
+            if r.returncode != 0:
+                err = r.stderr.strip().split("\n")[-1] if r.stderr.strip() else "Error desconocido"
+                console.print(f"\n  [bold red]X[/] [red]{err}[/]")
+                return None
+        except subprocess.TimeoutExpired:
+            console.print("\n  [bold red]X[/] [red]Timeout - la descarga tardo mucho[/]")
+            return None
+        except Exception as e:
+            console.print(f"\n  [bold red]X[/] [red]{str(e)}[/]")
+            return None
+        finally:
+            if cookie_file and os.path.exists(cookie_file):
+                os.unlink(cookie_file)
+
+    lines = (r.stdout or "").strip().split("\n")
+    fname = "archivo descargado"
+    for line in reversed(lines):
+        if "Destination:" in line:
+            fname = line.split("Destination:")[-1].strip()
+            break
+        elif "[download]" in line and "%" in line and "100%" in line:
+            parts = line.split()
+            for p in parts:
+                if p.endswith(('.mp4', '.mp3', '.webm', '.mkv', '.m4a')):
+                    fname = p
+                    break
+
+    console.print(f"\n  [bold green]:)[/] [bold bright_white]{fname}[/]")
+    return fname
+
+def download_single(link, mode):
+    outtmpl = os.path.join(WORKDIR, "%(title)s.%(ext)s")
+    is_audio = mode == "1"
+    tag = "[bold green]Audio[/]" if is_audio else "[bold green]Video[/]"
+
+    def build_args(cookies=None):
+        args = ["yt-dlp", "-o", outtmpl, "--no-playlist", "--no-warnings", "--newline", link]
+        if cookies:
+            args += ["--cookies", cookies]
+        if is_audio:
+            args += ["-x", "--audio-format", "mp3", "--audio-quality", "320"]
+        else:
+            args += ["-f", "bv*+ba/b", "--merge-output-format", "mp4"]
+        return args
+
+    with console.status(f"[bold bright_white]Descargando[/] {tag}...", spinner="dots12",
+                        spinner_style="bright_cyan"):
+        r = None
+        cookie_file = None
+        try:
+            r = subprocess.run(build_args(), capture_output=True, text=True, timeout=600)
+
+            if r.returncode != 0:
+                cookie_file = make_cookie_file()
+                if cookie_file:
+                    r = subprocess.run(build_args(cookie_file), capture_output=True, text=True, timeout=600)
+
+            if r.returncode != 0:
+                err = r.stderr.strip().split("\n")[-1] if r.stderr.strip() else "Error desconocido"
+                console.print(f"\n  [bold red]X[/] [red]{err}[/]")
+                return None
+        except subprocess.TimeoutExpired:
+            console.print("\n  [bold red]X[/] [red]Timeout - la descarga tardo mucho[/]")
+            return None
+        except Exception as e:
+            console.print(f"\n  [bold red]X[/] [red]{str(e)}[/]")
+            return None
+        finally:
+            if cookie_file and os.path.exists(cookie_file):
+                os.unlink(cookie_file)
+
+    lines = (r.stderr or "").split("\n") + (r.stdout or "").split("\n")
+    fname = "archivo descargado"
+    for line in lines:
+        if "Merging formats into" in line:
+            fname = line.split('"')[-2] if '"' in line else line.split("into")[-1].strip()
+            break
+        elif "Destination:" in line:
+            candidate = line.split("Destination:")[-1].strip()
+            if not candidate.endswith(('.webm', '.m4a', '.opus', '.part')):
+                fname = candidate
+    if fname == "archivo descargado":
+        for line in reversed(lines):
+            if "[download]" in line and "%" in line:
+                parts = line.split()
+                for p in parts:
+                    if p.endswith(('.mp4', '.mp3', '.webm', '.mkv', '.m4a')) and '.part' not in p:
+                        fname = p
+                        break
+                if fname != "archivo descargado":
+                    break
+
+    console.print(f"\n  [bold green]:)[/] [bold bright_white]{fname}[/]")
+    return fname
+
+def handle_playlist(url, history):
+    clear()
+    console.print()
+    console.print(render_banner())
+    console.print()
+    console.print(Panel(
+        Align.center(Text("Obteniendo informacion de la playlist...", style="italic bright_white")),
+        title="[bold bright_magenta]Playlist[/]", border_style="bright_magenta", padding=(0, 2),
+    ))
+    console.print()
+
+    playlist = fetch_playlist(url)
+    if not playlist:
+        console.print("  [bold red]X[/] [red]No se pudo obtener la playlist[/]")
+        input("\n  Presiona ENTER para continuar...")
+        return
+
+    clear()
+    console.print()
+    console.print(render_banner())
+    console.print()
+    console.print(render_playlist(playlist))
+    console.print()
+    console.print(render_selection_prompt(playlist["count"], playlist.get("unavailable_count", 0)))
+    console.print()
+
+    try:
+        sel = input("  \033[32m\033[1m>\033[0m \033[37m\033[1m").strip()
+        print("\033[0m", end="")
+    except (EOFError, KeyboardInterrupt):
+        return
+
+    indices = parse_selection(sel, playlist["count"])
+    if not indices:
+        console.print("\n  [bold yellow]![/] [yellow]Ningun video seleccionado[/]")
+        input("\n  Presiona ENTER para continuar...")
+        return
+
+    selected = []
+    skipped = []
+    for v in playlist["videos"]:
+        if v["index"] in indices:
+            if v["available"] and v["url"]:
+                selected.append(v)
+            else:
+                skipped.append(v)
+
+    if not selected:
+        console.print("\n  [bold yellow]![/] [yellow]Ningun video disponible para descargar[/]")
+        input("\n  Presiona ENTER para continuar...")
+        return
+
+    clear()
+    console.print()
+    console.print(render_banner())
+    console.print()
+    console.print(Panel(
+        Align.center(Text(
+            f"{len(selected)} videos para descargar" + (f"  [dim]({len(skipped)} omitidos)[/]" if skipped else ""),
+            style="italic bright_white")),
+        title="[bold bright_cyan]Formato[/]", border_style="bright_cyan", padding=(0, 2),
+    ))
+    console.print()
+
+    try:
+        fmt = input("  \033[33m\033[1m[1] Audio  [2] Video\033[0m \033[37m\033[1m>\033[0m \033[37m\033[1m").strip()
+        print("\033[0m", end="")
+    except (EOFError, KeyboardInterrupt):
+        return
+
+    global_mode = "1" if fmt in ("1", "a", "audio") else "2"
+
+    clear()
+    console.print()
+    console.print(render_banner())
+    console.print()
+
+    if skipped:
+        console.print(Panel(
+            Align.center(Text(
+                "Videos omitidos (no disponibles): " + ", ".join(f"#{s['index']}" for s in skipped),
+                style="dim red")),
+            title="[bold red]Omitidos[/]", border_style="red", padding=(0, 2),
+        ))
+        console.print()
+
+    ok = 0
+    fail = 0
+    for v in selected:
+        title = v["title"]
+        if len(title) > 50:
+            title = title[:47] + "..."
+
+        console.print(f"  [bold bright_white]{v['index']}.[/] {title}")
+
+        fname = run_download(v["url"], global_mode)
+        if fname:
+            history.append({
+                "file": fname,
+                "mode": "audio" if global_mode == "1" else "video",
+                "time": datetime.now().strftime("%H:%M:%S"),
+            })
+            ok += 1
+        else:
+            fail += 1
+        console.print()
+
+    console.print(Panel(
+        Align.center(Text(
+            f"[bold green]{ok}[/] descargados  |  [bold red]{fail}[/] fallidos" +
+            (f"  |  [dim]{len(skipped)} omitidos[/]" if skipped else ""),
+            style="bright_white")),
+        title="[bold bright_green]Resultados[/]", border_style="bright_green", padding=(0, 2),
+    ))
+    input("\n  Presiona ENTER para continuar...")
+
+def main():
+    signal.signal(signal.SIGINT, lambda *_: (console.print("\n\n  [bold bright_white]Hasta luego :)[/]\n"), sys.exit(0)))
+
+    if len(sys.argv) > 1:
+        link = clean_url(sys.argv[1])
+        if not re.search(r'(youtube\.com|youtu\.be)', link):
+            console.print("[bold red]X[/] [red]URL no valida de YouTube[/]")
+            sys.exit(1)
+        mode = "1" if "--audio" in sys.argv or "-a" in sys.argv else "2"
+        clear()
+        console.print(render_banner())
+        console.print()
+        if is_playlist(link):
+            history = []
+            handle_playlist(link, history)
+        else:
+            run_download(link, mode)
+        console.print()
+        return
+
+    history = []
+
+    while True:
+        clear()
+        console.print()
+        console.print(render_banner())
+        console.print()
+        console.print(Panel(render_header(), border_style="bright_blue", padding=(0, 1)))
+        console.print()
+        console.print(render_menu())
+        console.print()
+        console.print(render_url_box())
+        console.print()
+
+        try:
+            choice = input("  \033[33m\033[1m>\033[0m \033[37m\033[1m").strip()
+            print("\033[0m", end="")
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n\n  [bold bright_white]Hasta luego :)[/]\n")
+            break
+
+        if not choice:
+            continue
+
+        cmd = choice.lower()
+        if cmd in ("5", "exit", "quit", "q"):
+            console.print("\n  [bold bright_white]Hasta luego :)[/]\n")
+            break
+
+        if cmd in ("4", "help"):
+            clear()
+            console.print()
+            console.print(render_banner())
+            console.print()
+            console.print(render_help())
+            input("\n  Presiona ENTER para continuar...")
+            continue
+
+        if cmd in ("3", "history", "hist"):
+            clear()
+            console.print()
+            console.print(render_banner())
+            console.print()
+            console.print(render_history(history))
+            input("\n  Presiona ENTER para continuar...")
+            continue
+
+        is_link = bool(re.search(r'(youtube\.com|youtu\.be|youtube)', cmd))
+
+        if cmd in ("1", "audio", "a"):
+            mode = "1"
+            clear()
+            console.print()
+            console.print(render_banner())
+            console.print()
+            console.print(Panel(
+                Align.center(Text("Pega el link de YouTube", style="italic bright_white")),
+                title="[bold bright_green]Audio MP3 320kbps[/]", border_style="bright_green", padding=(0, 2),
+            ))
+            console.print()
+            try:
+                link = clean_url(input("  \033[32m\033[1m>\033[0m \033[37m\033[1m").strip())
+                print("\033[0m", end="")
+            except (EOFError, KeyboardInterrupt):
+                continue
+
+            if not link or not re.search(r'(youtube\.com|youtu\.be|youtube)', link):
+                console.print("\n  [bold red]X[/] [red]URL no valida de YouTube[/]")
+                input("\n  Presiona ENTER para continuar...")
+                continue
+
+            if is_playlist(link):
+                handle_playlist(link, history)
+                continue
+
+        elif cmd in ("2", "video", "v"):
+            mode = "2"
+            clear()
+            console.print()
+            console.print(render_banner())
+            console.print()
+            console.print(Panel(
+                Align.center(Text("Pega el link de YouTube", style="italic bright_white")),
+                title="[bold bright_green]Video HD[/]", border_style="bright_green", padding=(0, 2),
+            ))
+            console.print()
+            try:
+                link = clean_url(input("  \033[32m\033[1m>\033[0m \033[37m\033[1m").strip())
+                print("\033[0m", end="")
+            except (EOFError, KeyboardInterrupt):
+                continue
+
+            if not link or not re.search(r'(youtube\.com|youtu\.be|youtube)', link):
+                console.print("\n  [bold red]X[/] [red]URL no valida de YouTube[/]")
+                input("\n  Presiona ENTER para continuar...")
+                continue
+
+            if is_playlist(link):
+                handle_playlist(link, history)
+                continue
+
+        elif is_link:
+            link = clean_url(choice)
+            if is_playlist(link):
+                handle_playlist(link, history)
+                continue
+            clear()
+            console.print()
+            console.print(render_banner())
+            console.print()
+            console.print(Panel(
+                Align.center(Text("Elige el formato de descarga", style="italic bright_white")),
+                title="[bold bright_yellow]Link detectado[/]", border_style="bright_yellow", padding=(0, 2),
+            ))
+            console.print()
+            try:
+                fmt = input("  \033[33m\033[1m[1] Audio  [2] Video\033[0m \033[37m\033[1m>\033[0m \033[37m\033[1m").strip()
+                print("\033[0m", end="")
+            except (EOFError, KeyboardInterrupt):
+                continue
+            mode = "1" if fmt in ("1", "a", "audio") else "2"
+
+        else:
+            console.print(f"\n  [bold red]X[/] [red]Opcion no valida: {cmd}[/]")
+            input("\n  Presiona ENTER para continuar...")
+            continue
+
+        if not link or not re.search(r'(youtube\.com|youtu\.be|youtube)', link):
+            console.print("\n  [bold red]X[/] [red]URL no valida de YouTube[/]")
+            input("\n  Presiona ENTER para continuar...")
+            continue
+
+        clear()
+        console.print()
+        console.print(render_banner())
+        console.print()
+
+        fname = download_single(link, mode)
+        if fname:
+            history.append({
+                "file": fname,
+                "mode": "audio" if mode == "1" else "video",
+                "time": datetime.now().strftime("%H:%M:%S"),
+            })
+
+        console.print()
+        input("  Presiona ENTER para continuar...")
+
+if __name__ == "__main__":
+    main()
