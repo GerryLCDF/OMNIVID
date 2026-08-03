@@ -221,7 +221,7 @@ def render_playlist(playlist):
     t.add_column("Titulo", ratio=5)
     t.add_column("Dur", style="dim bright_cyan", justify="right", width=8)
     for v in playlist["videos"]:
-        title = v["title"]
+        title = v["title"] or "[No disponible]"
         if len(title) > 60:
             title = title[:57] + "..."
         if v["available"]:
@@ -521,7 +521,7 @@ def handle_playlist(url, history):
     ok = 0
     fail = 0
     for v in selected:
-        title = v["title"]
+        title = v["title"] or "[No disponible]"
         if len(title) > 50:
             title = title[:47] + "..."
 
