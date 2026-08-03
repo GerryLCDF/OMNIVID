@@ -9,6 +9,9 @@ import re
 import shutil
 import sqlite3
 import tempfile
+import select
+import threading
+import queue
 from datetime import datetime
 
 os.environ["PATH"] = os.path.expanduser("~/.deno/bin") + ":" + os.environ.get("PATH", "")
@@ -20,6 +23,10 @@ from rich.text import Text
 from rich.columns import Columns
 from rich.align import Align
 from rich import box
+from rich.progress import (
+    Progress, BarColumn, TextColumn as ProgressText, TaskProgressColumn,
+    TimeRemainingColumn, SpinnerColumn,
+)
 
 BANNER = r"""
  ██████╗ ███╗   ███╗███╗   ██╗██╗██╗   ██╗██╗██████╗
@@ -318,6 +325,50 @@ def make_cookie_file():
     except Exception as e:
         return None
 
+def run_ytdlp(args, tag, timeout=600):
+    """Ejecuta yt-dlp mostrando barra de progreso en vivo. Devuelve (returncode, lines)."""
+    lines = []
+    with Progress(
+        ProgressText("[bold bright_white]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task(tag, total=100)
+        p = subprocess.Popen(
+            args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
+        )
+        try:
+            while True:
+                ready, _, _ = select.select([p.stdout], [], [], 0.5)
+                if not ready:
+                    if p.poll() is not None:
+                        break
+                    continue
+                line = p.stdout.readline()
+                if not line:
+                    break
+                line = line.rstrip("\n")
+                lines.append(line)
+                m = re.search(r"\[download\]\s+([\d.]+)%", line)
+                if m:
+                    progress.update(task, completed=float(m.group(1)))
+                dm = re.search(r"Destination:\s+(.+)", line)
+                if dm:
+                    fname = os.path.basename(dm.group(1).strip())
+                    progress.update(task, description=fname)
+                mm = re.search(r"Merging formats into\s+[\"']([^\"']+)[\"']", line)
+                if mm:
+                    progress.update(task, description=os.path.basename(mm.group(1)))
+            p.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait()
+            raise
+    return p.returncode, lines
+
 def run_download(link, mode):
     is_audio = mode == "1"
     outtmpl = os.path.join(WORKDIR, "%(playlist_index)s - %(title)s.%(ext)s")
@@ -333,33 +384,31 @@ def run_download(link, mode):
         return args
 
     tag = "[bold green]Audio[/]" if is_audio else "[bold green]Video[/]"
-    with console.status(f"[bold bright_white]Descargando[/] {tag}...", spinner="dots12",
-                        spinner_style="bright_cyan"):
-        r = None
-        cookie_file = None
-        try:
-            r = subprocess.run(build_args(), capture_output=True, text=True, timeout=600)
+    r = None
+    lines = []
+    cookie_file = None
+    try:
+        r, lines = run_ytdlp(build_args(), f"Descargando {tag}")
 
-            if r.returncode != 0:
-                cookie_file = make_cookie_file()
-                if cookie_file:
-                    r = subprocess.run(build_args(cookie_file), capture_output=True, text=True, timeout=600)
+        if r != 0:
+            cookie_file = make_cookie_file()
+            if cookie_file:
+                r, lines = run_ytdlp(build_args(cookie_file), f"Reintentando {tag}")
 
-            if r.returncode != 0:
-                err = r.stderr.strip().split("\n")[-1] if r.stderr.strip() else "Error desconocido"
-                console.print(f"\n  [bold red]X[/] [red]{err}[/]")
-                return None
-        except subprocess.TimeoutExpired:
-            console.print("\n  [bold red]X[/] [red]Timeout - la descarga tardo mucho[/]")
+        if r != 0:
+            err = lines[-1] if lines and lines[-1].strip() else "Error desconocido"
+            console.print(f"\n  [bold red]X[/] [red]{err}[/]")
             return None
-        except Exception as e:
-            console.print(f"\n  [bold red]X[/] [red]{str(e)}[/]")
-            return None
-        finally:
-            if cookie_file and os.path.exists(cookie_file):
-                os.unlink(cookie_file)
+    except subprocess.TimeoutExpired:
+        console.print("\n  [bold red]X[/] [red]Timeout - la descarga tardo mucho[/]")
+        return None
+    except Exception as e:
+        console.print(f"\n  [bold red]X[/] [red]{str(e)}[/]")
+        return None
+    finally:
+        if cookie_file and os.path.exists(cookie_file):
+            os.unlink(cookie_file)
 
-    lines = (r.stdout or "").strip().split("\n")
     fname = "archivo descargado"
     for line in reversed(lines):
         if "Destination:" in line:
@@ -390,33 +439,31 @@ def download_single(link, mode):
             args += ["-f", "bv*+ba/b", "--merge-output-format", "mp4"]
         return args
 
-    with console.status(f"[bold bright_white]Descargando[/] {tag}...", spinner="dots12",
-                        spinner_style="bright_cyan"):
-        r = None
-        cookie_file = None
-        try:
-            r = subprocess.run(build_args(), capture_output=True, text=True, timeout=600)
+    r = None
+    lines = []
+    cookie_file = None
+    try:
+        r, lines = run_ytdlp(build_args(), f"Descargando {tag}")
 
-            if r.returncode != 0:
-                cookie_file = make_cookie_file()
-                if cookie_file:
-                    r = subprocess.run(build_args(cookie_file), capture_output=True, text=True, timeout=600)
+        if r != 0:
+            cookie_file = make_cookie_file()
+            if cookie_file:
+                r, lines = run_ytdlp(build_args(cookie_file), f"Reintentando {tag}")
 
-            if r.returncode != 0:
-                err = r.stderr.strip().split("\n")[-1] if r.stderr.strip() else "Error desconocido"
-                console.print(f"\n  [bold red]X[/] [red]{err}[/]")
-                return None
-        except subprocess.TimeoutExpired:
-            console.print("\n  [bold red]X[/] [red]Timeout - la descarga tardo mucho[/]")
+        if r != 0:
+            err = lines[-1] if lines and lines[-1].strip() else "Error desconocido"
+            console.print(f"\n  [bold red]X[/] [red]{err}[/]")
             return None
-        except Exception as e:
-            console.print(f"\n  [bold red]X[/] [red]{str(e)}[/]")
-            return None
-        finally:
-            if cookie_file and os.path.exists(cookie_file):
-                os.unlink(cookie_file)
+    except subprocess.TimeoutExpired:
+        console.print("\n  [bold red]X[/] [red]Timeout - la descarga tardo mucho[/]")
+        return None
+    except Exception as e:
+        console.print(f"\n  [bold red]X[/] [red]{str(e)}[/]")
+        return None
+    finally:
+        if cookie_file and os.path.exists(cookie_file):
+            os.unlink(cookie_file)
 
-    lines = (r.stderr or "").split("\n") + (r.stdout or "").split("\n")
     fname = "archivo descargado"
     for line in lines:
         if "Merging formats into" in line:
