@@ -2,7 +2,10 @@
 
 A terminal-based YouTube video and music downloader with playlist support, 320kbps MP3 audio, best-quality video, and automatic cookies.
 
-![Main menu](docs/screenshots/main-menu.png)
+![Main menu](<img width="1024" height="929" alt="image" src="https://github.com/user-attachments/assets/da850b82-bf4e-450c-be3d-8c90b29607fa" />)
+<img width="860" height="628" alt="image" src="https://github.com/user-attachments/assets/378a4242-4039-4fd2-aee4-d7ba613f0886" />
+
+
 
 ## Features
 
@@ -22,7 +25,9 @@ A terminal-based YouTube video and music downloader with playlist support, 320kb
 
 ## Demo
 
-[Watch the demo video](docs/video/demo.mp4)
+[Watch the demo video](
+
+)
 
 ## Requirements
 
