@@ -41,7 +41,7 @@ A terminal-based YouTube video and music downloader with playlist support, 320kb
 ## Demo
 
 <p align="center">
-  <a href="https://www.youtube.com/watch?v=MCsZuoAQvmE">
+  <a href="https://youtu.be/WGWq5oxr-Yo">
     <img src="https://img.youtube.com/vi/MCsZuoAQvmE/maxresdefault.jpg" width="560" alt="Watch the demo video" />
   </a>
   <br /><em>Click to watch the demo</em>
