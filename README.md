@@ -2,7 +2,7 @@
 
 A terminal-based YouTube video and music downloader with playlist support, 320kbps MP3 audio, best-quality video, and automatic cookies.
 
-![Main menu](<img width="1024" height="929" alt="image" src="https://github.com/user-attachments/assets/da850b82-bf4e-450c-be3d-8c90b29607fa" />)
+![Main menu]
 <img width="860" height="628" alt="image" src="https://github.com/user-attachments/assets/378a4242-4039-4fd2-aee4-d7ba613f0886" />
 
 
@@ -18,14 +18,22 @@ A terminal-based YouTube video and music downloader with playlist support, 320kb
 
 ## Screenshots
 
-![Video mode](docs/screenshots/video-mode.png)
-![Playlist selection](docs/screenshots/playlist.png)
-![Downloading](docs/screenshots/downloading.png)
+![Video mode] <img width="856" height="636" alt="image" src="https://github.com/user-attachments/assets/7b4757e3-a017-4da1-8da3-85c37ad22add" />
+
+![Playlist selection]<img width="856" height="636" alt="image" src="https://github.com/user-attachments/assets/164505f9-6cd7-4423-9f93-2ba145f88f78" />
+<img width="856" height="636" alt="image" src="https://github.com/user-attachments/assets/3fb9b500-9171-428e-afd7-d4595f32ee3c" />
+
+![Downloading] <img width="856" height="636" alt="image" src="https://github.com/user-attachments/assets/746964b0-f187-484f-ae1f-845b0d00c4cf" />
+
 ![Audio mode](docs/screenshots/audio-mode.png)
 
 ## Demo
 
 [Watch the demo video](
+
+
+
+
 
 )
 
